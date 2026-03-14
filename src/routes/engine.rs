@@ -59,7 +59,23 @@ pub async fn evaluate(
     span.set_attribute("params.project", project.clone());
     span.set_attribute("params.key", key.clone());
 
-    let Some(project_data) = agent.project(&project) else {
+    let project_data = if agent.is_saas_mode() {
+        let tenant = headers
+            .get("X-Tenant-ID")
+            .and_then(|h| h.to_str().ok())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                EvaluateError::Anyhow((
+                    StatusCode::BAD_REQUEST,
+                    anyhow!("Missing or invalid X-Tenant-ID header"),
+                ))
+            })?;
+        agent.project_for_tenant(tenant, &project)
+    } else {
+        agent.project(&project)
+    };
+
+    let Some(project_data) = project_data else {
         let error = (StatusCode::NOT_FOUND, anyhow!("Project not found"));
         return Err(error.into());
     };

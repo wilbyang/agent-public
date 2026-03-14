@@ -69,6 +69,7 @@ pub enum ProviderConfig {
     S3(S3ProviderConfig),
     AzureStorage(AzureStorageProviderConfig),
     GCS(GcsProviderConfig),
+    Postgres(PostgresProviderConfig),
 }
 
 impl Default for ProviderConfig {
@@ -130,6 +131,11 @@ pub struct GcsProviderConfig {
 
 pub fn default_root() -> String {
     "data".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PostgresProviderConfig {
+    pub database_url: String,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -16,12 +16,14 @@ use crate::engine_ext::EngineExtension;
 use crate::provider::azure_storage::AzureStorageProvider;
 use crate::provider::filesystem::FilesystemProvider;
 use crate::provider::gcs::GcsProvider;
+use crate::provider::pg::PostgresProvider;
 use crate::provider::s3::S3Provider;
 use crate::provider::zip::ZipProvider;
 
 mod azure_storage;
 mod filesystem;
 mod gcs;
+mod pg;
 mod s3;
 mod zip;
 
@@ -32,6 +34,7 @@ enum AgentProvider {
     S3(S3Provider),
     AzureStorage(AzureStorageProvider),
     GCS(GcsProvider),
+    Postgres(PostgresProvider),
 }
 
 impl AgentProvider {
@@ -42,6 +45,7 @@ impl AgentProvider {
             AgentProvider::S3(s3) => s3.load_data(data).await,
             AgentProvider::AzureStorage(storage) => storage.load_data(data).await,
             AgentProvider::GCS(gcs) => gcs.load_data(data).await,
+            AgentProvider::Postgres(pg) => pg.load_data(data).await,
         }
     }
 
@@ -52,7 +56,12 @@ impl AgentProvider {
             AgentProvider::S3(_) => true,
             AgentProvider::AzureStorage(_) => true,
             AgentProvider::GCS(_) => true,
+            AgentProvider::Postgres(_) => true,
         }
+    }
+
+    fn is_saas_mode(&self) -> bool {
+        matches!(self, AgentProvider::Postgres(_))
     }
 }
 
@@ -92,6 +101,9 @@ impl Agent {
             }
             ProviderConfig::GCS(config) => {
                 AgentProvider::GCS(GcsProvider::new(config, global_config).await?)
+            }
+            ProviderConfig::Postgres(config) => {
+                AgentProvider::Postgres(PostgresProvider::new(config).await?)
             }
         };
 
@@ -163,6 +175,34 @@ impl Agent {
 
             (rd.project.id.deref() == project).then_some(p.to_owned())
         })
+    }
+
+    /// Tenant-scoped project lookup used in SaaS (Postgres) mode.
+    ///
+    /// The DashMap key is `"tenant_slug:project_key"`.  The method first tries
+    /// a direct key hit, then falls back to searching by `project.id` within
+    /// the tenant's projects.
+    pub fn project_for_tenant(&self, tenant: &str, project: &str) -> Option<Arc<Project>> {
+        let direct_key = format!("{}:{}", tenant, project);
+        if let Some(p) = self.data.projects.get(&direct_key) {
+            return Some(p.clone());
+        }
+
+        let prefix = format!("{}:", tenant);
+        self.data.projects.iter().find_map(|entry| {
+            if !entry.key().starts_with(&prefix) {
+                return None;
+            }
+            let Some(rd) = entry.engine.release_data() else {
+                return None;
+            };
+            (rd.project.id.deref() == project).then_some(entry.to_owned())
+        })
+    }
+
+    /// Returns `true` when the agent is running in SaaS mode (Postgres provider).
+    pub fn is_saas_mode(&self) -> bool {
+        self.provider.is_saas_mode()
     }
 
     #[tracing::instrument(

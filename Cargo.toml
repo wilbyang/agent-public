@@ -41,6 +41,8 @@ utoipa-swagger-ui-vendored = "0.1"
 walkdir = "2.5"
 mimalloc = { version = "*" }
 zen-engine = { version = "0.54", features = ["arbitrary_precision"] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "json", "chrono", "migrate"] }
+uuid = { version = "1", features = ["v4"] }
 zip = { version = "8.2", default-features = false, features = [
     "aes-crypto",
     "bzip2",
